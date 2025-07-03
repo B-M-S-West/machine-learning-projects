@@ -126,7 +126,17 @@ def _(mo):
 def _():
     from sklearn.model_selection import train_test_split
     from sklearn.naive_bayes import MultinomialNB
-    return MultinomialNB, train_test_split
+    from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score, classification_report, roc_auc_score
+    return (
+        MultinomialNB,
+        classification_report,
+        confusion_matrix,
+        f1_score,
+        precision_score,
+        recall_score,
+        roc_auc_score,
+        train_test_split,
+    )
 
 
 @app.cell
@@ -144,7 +154,7 @@ def _(MultinomialNB, X_test, X_train, Y_train):
     clf.fit(X_train, Y_train)
     prediction_prob = clf.predict_proba(X_test)
     print(prediction_prob[0:10])
-    return (clf,)
+    return clf, prediction_prob
 
 
 @app.cell
@@ -152,7 +162,7 @@ def _(X_test, clf):
     # This gives us the predicted class for the test set
     prediction = clf.predict(X_test)
     print(prediction[:10])
-    return
+    return (prediction,)
 
 
 @app.cell
@@ -160,6 +170,116 @@ def _(X_test, Y_test, clf):
     # Evaluate the models performance here
     accuracy = clf.score(X_test, Y_test)
     print(f'The accuracy is: {accuracy*100:.1f}%')
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ## Evaluating classification performance
+
+    Other than accuracy of the model the following metrics will be look at in this section:
+
+    - Confusion Matric
+
+    - Recall
+
+    - F1 Score
+
+    - Area under the curve 
+
+    """
+    )
+    return
+
+
+@app.cell
+def _(Y_test, confusion_matrix, prediction):
+    # Confusion matrix
+    print(confusion_matrix(Y_test, prediction, labels=[0,1]))
+    return
+
+
+@app.cell
+def _(Y_test, f1_score, precision_score, prediction, recall_score):
+    # Precision score
+    precision = precision_score(Y_test, prediction, pos_label=1)
+    # Recall score
+    recall = recall_score(Y_test, prediction, pos_label=1)
+    # F1 Score
+    f1 = f1_score(Y_test, prediction, pos_label=1)
+    print(f'Precision Score is: {precision}\nRecall Score is: {recall}\nF1 Score is: {f1}')
+    return
+
+
+@app.cell
+def _(Y_test, classification_report, prediction):
+    # Generate the classification report
+    report = classification_report(Y_test, prediction)
+    print(report)
+    return
+
+
+@app.cell
+def _(Y_test, np, prediction_prob):
+    # Now focused on area under the curve. First need to create the Reciver Operating Characteristic curve
+    pos_prob = prediction_prob[:, 1]
+    thresholds = np.arange(0.0, 1.1, 0.05)
+    true_pos, false_pos = [0]*len(thresholds), [0]*len(thresholds)
+    for pred, y in zip(pos_prob, Y_test):
+        for i, threshold in enumerate(thresholds):
+            if pred >= threshold:
+                # if truth and prediction are both 1
+                if y == 1:
+                    true_pos[i] += 1
+                # if truth is 0 while prediction is 1
+                else:
+                    false_pos[i] += 1
+            else:
+                break
+    return false_pos, pos_prob, true_pos
+
+
+@app.cell
+def _(Y_test, false_pos, true_pos):
+    # Calculate the true and false positive rates for all threshold settings
+    n_pos_test = (Y_test == 1).sum()
+    n_neg_test = (Y_test == 0).sum()
+    true_pos_rate = [tp / n_pos_test for tp in true_pos]
+    false_pos_rate = [fp / n_neg_test for fp in false_pos]
+    return false_pos_rate, true_pos_rate
+
+
+@app.cell
+def _():
+    # Use matplotlib to plot the graph
+    import matplotlib.pyplot as plt
+    return (plt,)
+
+
+@app.cell
+def _(false_pos_rate, plt, true_pos_rate):
+    plt.figure()
+    lw = 2
+    plt.plot(false_pos_rate, true_pos_rate, color='darkorange', lw=lw, label='ROC Curve')
+    plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--', label='Random Classifier')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Reciever Operating Characteristic')
+    plt.legend(loc="lower right")
+    plt.show()
+         
+    return
+
+
+@app.cell
+def _(Y_test, pos_prob, roc_auc_score):
+    # Calculate the ROC AUC Score
+    roc = roc_auc_score(Y_test, pos_prob)
+    print(f'ROC AUC Score is: {roc}')
     return
 
 
