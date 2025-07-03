@@ -139,6 +139,7 @@ def _(X, Y, train_test_split):
 
 @app.cell
 def _(MultinomialNB, X_test, X_train, Y_train):
+    # Use of Multinomial as ratings are from 1-5. Smoothing factor of 1 and prior from the training set. This trains the model and we get the predicted probabilities
     clf = MultinomialNB(alpha=1.0, fit_prior=True)
     clf.fit(X_train, Y_train)
     prediction_prob = clf.predict_proba(X_test)
@@ -148,6 +149,7 @@ def _(MultinomialNB, X_test, X_train, Y_train):
 
 @app.cell
 def _(X_test, clf):
+    # This gives us the predicted class for the test set
     prediction = clf.predict(X_test)
     print(prediction[:10])
     return
@@ -155,6 +157,7 @@ def _(X_test, clf):
 
 @app.cell
 def _(X_test, Y_test, clf):
+    # Evaluate the models performance here
     accuracy = clf.score(X_test, Y_test)
     print(f'The accuracy is: {accuracy*100:.1f}%')
     return
