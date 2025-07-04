@@ -112,11 +112,6 @@ def _(Y):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
 def _(mo):
     mo.md(r"""The previous section allows us to analyse the label distribution and see how balanced the dataset is and if possible to train on it. 249 postives to 79 negatives means we have enough of each to go on and evaluate our classifier's performance. We will need to randomly split the dataset into two sets, the training and testing sets, which simulate learning data and prediction data. It's a small dataset, so 30% will be appropriate.""")
     return
@@ -187,8 +182,7 @@ def _(mo):
 
     - F1 Score
 
-    - Area under the curve 
-
+    - Area under the curve
     """
     )
     return
@@ -271,7 +265,7 @@ def _(false_pos_rate, plt, true_pos_rate):
     plt.title('Reciever Operating Characteristic')
     plt.legend(loc="lower right")
     plt.show()
-         
+
     return
 
 
@@ -280,6 +274,106 @@ def _(Y_test, pos_prob, roc_auc_score):
     # Calculate the ROC AUC Score
     roc = roc_auc_score(Y_test, pos_prob)
     print(f'ROC AUC Score is: {roc}')
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ## Tuning models with cross-valdation
+    Using k-fold cross-validation to assess how a model wil generally perform in practice.
+    This randomly divides the original data into k equal sized subsets, with class proportion often preserved.
+    """
+    )
+    return
+
+
+@app.cell
+def _():
+    from sklearn.model_selection import StratifiedKFold
+    return (StratifiedKFold,)
+
+
+@app.cell
+def _(StratifiedKFold):
+    # This divides the data into chunks. As a small dataset, using 5. Large k is more computationally expensive.
+    k = 5
+    k_fold = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
+    return (k_fold,)
+
+
+@app.cell
+def _():
+    # Explor values for alpha, the smoothing factor, and fit_prior, whether to use prior tailored to the training data
+    smoothing_factor_option = [1, 2, 3, 4, 5, 6]
+    fit_prior_option = [True, False]
+    auc_record = {}
+    return auc_record, fit_prior_option, smoothing_factor_option
+
+
+@app.cell
+def _(
+    MultinomialNB,
+    X,
+    Y,
+    auc_record,
+    fit_prior_option,
+    k_fold,
+    roc_auc_score,
+    smoothing_factor_option,
+):
+    # Initialise a dictionary to store lists of AUC scores
+    for alpha in smoothing_factor_option:
+        auc_record[alpha] = {}
+        for _fit_prior in fit_prior_option:
+            auc_record[alpha][_fit_prior] = []
+
+    # Collect AUC scores for each fold
+    for train_indices, test_indices in k_fold.split(X, Y):
+        X_train_k, X_test_k = X[train_indices], X[test_indices]
+        Y_train_k, Y_test_k = Y[train_indices], Y[test_indices]
+    
+        for alpha in smoothing_factor_option:
+            for _fit_prior in fit_prior_option:
+                _clf = MultinomialNB(alpha=alpha, fit_prior=_fit_prior)
+                _clf.fit(X_train_k, Y_train_k)
+                _prediction_prob = _clf.predict_proba(X_test_k)
+                _pos_prob = _prediction_prob[:, 1]
+                _auc = roc_auc_score(Y_test_k, _pos_prob)
+                auc_record[alpha][_fit_prior].append(_auc)
+    return
+
+
+@app.cell
+def _(auc_record):
+    # Print results with proper averaging
+    print(f"{'Smoothing':<10} {'Fit Prior':<10} {'AUC':<10}")
+    print("-" * 30)
+
+    max_auc = 0
+    best_params = None
+
+    for smoothing, smoothing_record in auc_record.items():
+        for fit_prior, auc_list in smoothing_record.items():
+            current_auc = sum(auc_list) / len(auc_list)  # Average the AUC scores
+            print(f'{smoothing:<10} {fit_prior:<10} {current_auc:<10.5f}')
+        
+            if current_auc > max_auc:
+                max_auc = current_auc
+                best_params = (smoothing, fit_prior)
+
+    print(f"\nBest: Smoothing={best_params[0]}, Fit Prior={best_params[1]}, AUC={max_auc:.5f}")
+    return
+
+
+@app.cell
+def _(MultinomialNB, X_test, X_train, Y_test, Y_train, roc_auc_score):
+    # Now retrain the model with the best averaged AUC
+    _clf = MultinomialNB(alpha=2, fit_prior=True)
+    _clf.fit(X_train, Y_train)
+    _pos_prob = _clf.predict_proba(X_test)[:, 1]
+    print('AUC with the best model:', roc_auc_score(Y_test, _pos_prob))
     return
 
 
