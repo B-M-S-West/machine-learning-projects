@@ -87,14 +87,37 @@ def _(entropy):
     return
 
 
-app._unparsable_cell(
-    r"""
+@app.cell
+def _(entropy, gini_impurity):
     criterion_function = {'gini': gini_impurity,
-                         'entropy': entrop}
-    def eighted_impurit
-    """,
-    name="_"
-)
+                         'entropy': entropy}
+    def weighted_impurity(groups, criterion='gini'):
+        """
+        Calculate weighted impurity of children after a split
+        @param groups: list of children, and a child consists a list of class labels
+        @param criterion: metric to measure the quality of a split, 'gini' for Gini impurity or 'entropy' for information gain
+        @return: float, eighted impurity
+        """
+        total = sum(len(group) for group in groups)
+        weighted_sum = 0.0
+        for group in groups:
+            weighted_sum += len(group) / float(total) * criterion_function[criterion](group)
+        return weighted_sum
+    return (weighted_impurity,)
+
+
+@app.cell
+def _(weighted_impurity):
+    children_1 = [[1, 0, 1], [0, 1]]
+    children_2 = [[1, 1], [0, 0, 1]]
+    print(f"Entropy of #1 split: {weighted_impurity(children_1, 'entropy'):.4f}")
+    print(f"Entropy of #2 split: {weighted_impurity(children_2, 'entropy'):.4f}")
+    return
+
+
+@app.cell
+def _():
+    return
 
 
 if __name__ == "__main__":
