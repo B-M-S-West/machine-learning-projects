@@ -3,7 +3,7 @@ import pickle
 import numpy as np
 from pydantic import BaseModel
 
-with open("ml_API_example/house_price_model.pkl", "rb") as f:
+with open("house_price_model.pkl", "rb") as f:
     model = pickle.load(f)
 
 app = FastAPI(title="House Price Prediction API")
