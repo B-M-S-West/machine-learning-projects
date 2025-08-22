@@ -22,3 +22,13 @@ def predict_price(data: HouseData):
     prediction = model.predict(features)
 
     return {"predicted_price": float(prediction[0])}
+
+class MultipleHouses(BaseModel):
+    houses: list[HouseData]
+
+@app.post("/predict_batch")
+def predict_batch(data: MultipleHouses):
+    features = np.array([[house.size_sqft, house.bedrooms] for house in data.houses])
+    predictions = model.predict(features)
+
+    return {"predicted_prices": predictions.tolist()}
