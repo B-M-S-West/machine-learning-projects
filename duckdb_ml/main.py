@@ -24,7 +24,7 @@ def _():
     import plotly.express as px
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.model_selection import train_test_split
-    return (duckdb,)
+    return duckdb, px
 
 
 @app.cell
@@ -59,6 +59,46 @@ def _(duckdb):
     duckdb_conn = duckdb.connect()
 
     process_palmerpenguins_data(duckdb_conn=duckdb_conn)
+    return (duckdb_conn,)
+
+
+@app.cell
+def _(duckdb_conn, px):
+    # plot species and island
+    px.bar(
+        duckdb_conn.table("penguins_data").aggregate(
+            "species, island, count(*) as number_of_observations"
+        ).order(
+            "island, species"
+        ).df(),
+        x="island",
+        y="number_of_observations", 
+        color="species", 
+        title="Palmer Penguins Observations", 
+        barmode="group", 
+        labels={
+            "number_of_observations": "Number of Observations",
+            "island": "Island"
+        }
+    )
+    return
+
+
+@app.cell
+def _(duckdb_conn, px):
+    # plot features per species
+    px.scatter(
+        duckdb_conn.table("penguins_data").df(), 
+        x="bill_length_mm", 
+        y="bill_depth_mm", 
+        size="body_mass_g", 
+        color="species", 
+        title="Penguins Observations, bill length and depth, per species", 
+        labels={
+            "bill_length_mm": "Bill Length in mm", 
+            "bill_depth_mm": "Bill Depth in mm"
+        }
+    )
     return
 
 
