@@ -1,6 +1,7 @@
 # Project specific folders
 movie_data/
 
+*.sav
 *.pkl
 
 # Byte-compiled / optimized / DLL files

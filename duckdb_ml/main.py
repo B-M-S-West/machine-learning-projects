@@ -7,7 +7,7 @@ app = marimo.App(width="medium")
 @app.cell
 def _():
     import marimo as mo
-    return
+    return (mo,)
 
 
 @app.cell
@@ -19,12 +19,20 @@ def _():
     from decimal import Decimal
 
     import duckdb
+    import sqlglot
     import numpy as np
     import orjson
     import plotly.express as px
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.model_selection import train_test_split
-    return RandomForestClassifier, duckdb, pickle, px, train_test_split
+    return (
+        Decimal,
+        RandomForestClassifier,
+        duckdb,
+        pickle,
+        px,
+        train_test_split,
+    )
 
 
 @app.cell
@@ -134,9 +142,15 @@ def _(duckdb_conn):
 @app.cell
 def _(train_test_split):
     def train_split_data(selection_query):
-        X_df = selection_query.select(
-            "bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g, island_id, observation_id, species_id"
-        ).order("observation_id").df()
+        X_df = selection_query.select("""
+            bill_length_mm,
+            bill_depth_mm,
+            flipper_length_mm,
+            body_mass_g,
+            island_id,
+            observation_id,
+            species_id
+        """).order("observation_id").df()
         y_df = [
             x[0]
             for x in selection_query.order("observation_id").select("species_id").fetchall()
@@ -144,7 +158,7 @@ def _(train_test_split):
 
         num_test = 0.30
         return train_test_split(X_df, y_df, test_size=num_test)
-    
+
     return (train_split_data,)
 
 
@@ -157,10 +171,10 @@ def _(RandomForestClassifier, pickle, train_split_data):
 
         model.fit(X_train.drop(["observation_id", "species_id"], axis=1).values, y_train)
 
-        pickle.dump(model, open("./model/penguin_model.sav", "wb"))
+        pickle.dump(model, open("duckdb_ml/model/penguin_model.sav", "wb"))
 
         print(f" Accuracy score is: {model.score( 
-            X_test.drop(["observation_id", "species_id"], axis=1).values. y_test
+            X_test.drop(["observation_id", "species_id"], axis=1).values, y_test
         )}")
     return (get_model,)
 
@@ -174,7 +188,86 @@ def _(duckdb_conn, get_model, pickle):
     )
     get_model(selection_query)
 
-    model = pickle.load(open("./model/penguin_model.sav", "rb"))
+    model = pickle.load(open("duckdb_ml/model/penguin_model.sav", "rb"))
+    return model, selection_query
+
+
+@app.cell
+def _(duckdb_conn, model, selection_query):
+    # get predictions with pandas and duckb in python
+
+    predicted_df = selection_query.select(
+        "bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g, island_id, observation_id, species_id"
+    ).df()
+
+    predicted_df["predicted_species_id"] = model.predict(
+        predicted_df.drop(["observation_id", "species_id"], axis=1).values
+    )
+
+    (
+        duckdb_conn.table("predicted_df")
+        .select("observation_id", "species_id", "predicted_species_id")
+        .filter("species_id != predicted_species_id")
+    )
+    return (predicted_df,)
+
+
+@app.cell
+def _(mo, predicted_df):
+    _df = mo.sql(
+        f"""
+        -- directly with SQL
+        SELECT observation_id, species_id, predicted_species_id
+        FROM predicted_df
+        WHERE species_id != predicted_species_id
+        """
+    )
+    return
+
+
+@app.cell
+def _(Decimal, duckdb_conn, pickle, selection_query):
+    # get predictions with duckdb udf, row by row
+    def get_prediction_per_row(
+        bill_length_mm: Decimal, bill_depth_mm: Decimal, flipper_length_mm: int, body_mass_g: int, island_id: int
+    ) -> int:
+        model = pickle.load(open("duckdb_ml/model/penguin_model.sav", "rb"))
+        return int(
+            model.predict(
+                [
+                    [
+                        bill_length_mm, 
+                        bill_depth_mm, 
+                        flipper_length_mm, 
+                        body_mass_g, 
+                        island_id, 
+                    ]
+                ]
+            )[0]
+        )
+
+    try:
+        duckdb_conn.remove_function("predict_species_per_row")
+    except Exception:
+        pass
+    finally:
+        duckdb_conn.create_function(
+            "predict_species_per_row", get_prediction_per_row, return_type=int
+        )
+
+    selection_query.select(
+        """
+        observation_id,
+        species_id,
+        predict_species_per_row(
+            bill_length_mm,
+            bill_depth_mm, 
+            flipper_length_mm, 
+            body_mass_g, 
+            island_id
+        ) as predicted_species_id
+        """
+    ).filter("species_id != predicted_species_id")
     return
 
 

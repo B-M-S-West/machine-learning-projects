@@ -17,6 +17,7 @@ dependencies = [
     "pytest>=8.4.1",
     "scikit-learn>=1.7.0",
     "scipy>=1.16.0",
+    "sqlglot>=27.9.0",
     "torch>=2.7.1",
     "torchvision>=0.22.1",
 ]
