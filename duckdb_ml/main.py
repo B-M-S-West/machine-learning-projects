@@ -24,7 +24,7 @@ def _():
     import plotly.express as px
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.model_selection import train_test_split
-    return duckdb, px
+    return RandomForestClassifier, duckdb, pickle, px, train_test_split
 
 
 @app.cell
@@ -99,6 +99,82 @@ def _(duckdb_conn, px):
             "bill_depth_mm": "Bill Depth in mm"
         }
     )
+    return
+
+
+@app.cell
+def _(duckdb_conn):
+    # analyze the data
+    duckdb_conn.table("penguins_data").describe().df()
+    return
+
+
+@app.cell
+def _(duckdb_conn):
+    # instead of label encoding, we create reference tables
+    def process_reference_data(duckdb_conn):
+        for feature in ["species", "island"]:
+            duckdb_conn.sql(f"drop table if exists {feature}_ref")
+            (
+                duckdb_conn.table("penguins_data")
+                .select(feature)
+                .unique(feature)
+                .row_number(
+                    window_spec=f"over (order by {feature})", projected_columns=feature
+                )
+                .select(f"{feature}, #2 - 1 as {feature}_id")
+                .to_table(f"{feature}_ref")
+            )
+            duckdb_conn.table(f"{feature}_ref").show()
+
+    process_reference_data(duckdb_conn)
+    return
+
+
+@app.cell
+def _(train_test_split):
+    def train_split_data(selection_query):
+        X_df = selection_query.select(
+            "bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g, island_id, observation_id, species_id"
+        ).order("observation_id").df()
+        y_df = [
+            x[0]
+            for x in selection_query.order("observation_id").select("species_id").fetchall()
+        ]
+
+        num_test = 0.30
+        return train_test_split(X_df, y_df, test_size=num_test)
+    
+    return (train_split_data,)
+
+
+@app.cell
+def _(RandomForestClassifier, pickle, train_split_data):
+    def get_model(selection_query):
+        X_train, X_test, y_train, y_test = train_split_data(selection_query)
+
+        model = RandomForestClassifier(n_estimators=1, max_depth=2, random_state=5)
+
+        model.fit(X_train.drop(["observation_id", "species_id"], axis=1).values, y_train)
+
+        pickle.dump(model, open("./model/penguin_model.sav", "wb"))
+
+        print(f" Accuracy score is: {model.score( 
+            X_test.drop(["observation_id", "species_id"], axis=1).values. y_test
+        )}")
+    return (get_model,)
+
+
+@app.cell
+def _(duckdb_conn, get_model, pickle):
+    selection_query = (
+        duckdb_conn.table("penguins_data")
+        .join(duckdb_conn.table("island_ref"), condition="island")
+        .join(duckdb_conn.table("species_ref"), condition="species")
+    )
+    get_model(selection_query)
+
+    model = pickle.load(open("./model/penguin_model.sav", "rb"))
     return
 
 
