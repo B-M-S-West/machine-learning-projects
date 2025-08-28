@@ -28,7 +28,10 @@ def _():
     return (
         Decimal,
         RandomForestClassifier,
+        datetime,
         duckdb,
+        np,
+        orjson,
         pickle,
         px,
         train_test_split,
@@ -268,6 +271,84 @@ def _(Decimal, duckdb_conn, pickle, selection_query):
         ) as predicted_species_id
         """
     ).filter("species_id != predicted_species_id")
+    return
+
+
+@app.cell
+def _(
+    Decimal,
+    datetime,
+    duckdb,
+    duckdb_conn,
+    input_data_parsed,
+    np,
+    orjson,
+    pickle,
+):
+    # get predictions with duckdb edf, full / batch style
+
+    def get_prediction_per_batch(input_data: dict[str, list[Decimal | int]]) -> np.ndarray:
+        """
+        input_data example:
+            {
+                "bill_length_mm": [40.5],
+                "bill_depth_mm": [41.5], 
+                "flipper_length_mm": [250], 
+                "bpdy_mass_g": [3000], 
+                "island_id": [1]
+            }
+        """
+        model = pickle.load(open("duckdb_ml/model/penguin_model.sav", "rb"))
+
+        st_dt = datetime.now()
+
+        input_date_parsed = orjson.loads(input_data)
+
+        print(f"JSON parsing took {(datetime.now() - st_dt).total_seconds()} seconds")
+
+        st_dt = datetime.now()
+
+        input_data_converted_to_numpy = np.stack(tuple(input_data_parsed.values()), axis=1)
+
+        print(f"Converting to numpy took {(datetime.now() - st_dt).total_seconds()} seconds")
+
+        return model.predict(input_data_converted_to_numpy)
+
+    try:
+        duckdb_conn.remove_function("predict_species_per_batch")
+    except Exception:
+        pass
+    finally:
+        duckdb_conn.create_function(
+            "predict_species_per_batch",
+            get_prediction_per_batch,
+            return_type=duckdb.typing.DuckDBPyType(list[int])
+        )
+
+    def get_selection_query_for_batch(selection_query):
+            return (
+                selection_query
+                .aggregate("""
+                    json_object(
+                        'bill_length_mm', array_agg(bill_length_mm),
+                        'bill_depth_mm', array_agg(bill_depth_mm),
+                        'flipper_length_mm', array_agg(flipper_length_mm),
+                        'body_mass_g', array_agg(body_mass_g),
+                        'island_id', array_agg(island_id)
+                    ) as input_data,
+                    struct_pack(
+                        observation_id := array_agg(observation_id),
+                        species_id := array_agg(species_id),
+                        predicted_species_id := predict_species_per_batch(input_data)
+                    ) as output_data
+                """)
+                .select("""
+                    unnest(output_data.observation_id) as observation_id,
+                    unnest(output_data.species_id) as species_id,
+                    unnest(output_data.predicted_species_id) as predicted_species_id
+                """)
+            )
+
     return
 
 
