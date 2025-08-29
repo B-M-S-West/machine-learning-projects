@@ -441,6 +441,42 @@ def _(duckdb_conn, selection_query):
 
 
 @app.cell
+def _(duckdb_conn):
+    duckdb_conn.sql("select * from dummy_generated_data using sample 10%").to_table("sample_dummy_data")
+    return
+
+
+@app.cell
+def _(duckdb_conn, get_selection_query_for_batch):
+    get_selection_query_for_batch(duckdb_conn.table("sample_dummy_data")).aggregate("""
+                sum(if(species_id = predicted_species_id, 1, 0)) number_of_correct_predictions,
+                sum(if(species_id = predicted_species_id, 0, 1)) number_of_incorrect_predictions
+            """)
+    return
+
+
+@app.cell
+def _(duckdb_conn, model):
+    predicted_dummy_df = duckdb_conn.table("sample_dummy_data").select(
+        "bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g, island_id, observation_id, species_id"
+    ).df()
+
+    predicted_dummy_df["predicted_species_id"] = model.predict(
+        predicted_dummy_df.drop(["observation_id", "species_id"], axis=1).values
+    )
+
+    (
+        duckdb_conn.table("predicted_dummy_df")
+        .select("observation_id", "species_id", "predicted_species_id")
+        .aggregate("""
+            sum(if(species_id = predicted_species_id, 1, 0)) number_of_correct_predictions,
+            sum(if(species_id = predicted_species_id, 0, 1)) number_of_incorrect_predictions
+        """)
+    )
+    return
+
+
+@app.cell
 def _():
     return
 
