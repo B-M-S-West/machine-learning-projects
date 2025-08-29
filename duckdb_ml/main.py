@@ -275,16 +275,7 @@ def _(Decimal, duckdb_conn, pickle, selection_query):
 
 
 @app.cell
-def _(
-    Decimal,
-    datetime,
-    duckdb,
-    duckdb_conn,
-    input_data_parsed,
-    np,
-    orjson,
-    pickle,
-):
+def _(Decimal, datetime, duckdb, duckdb_conn, np, orjson, pickle):
     # get predictions with duckdb edf, full / batch style
 
     def get_prediction_per_batch(input_data: dict[str, list[Decimal | int]]) -> np.ndarray:
@@ -302,7 +293,7 @@ def _(
 
         st_dt = datetime.now()
 
-        input_date_parsed = orjson.loads(input_data)
+        input_data_parsed = orjson.loads(input_data)
 
         print(f"JSON parsing took {(datetime.now() - st_dt).total_seconds()} seconds")
 
@@ -349,6 +340,103 @@ def _(
                 """)
             )
 
+    return (get_selection_query_for_batch,)
+
+
+@app.cell
+def _(get_selection_query_for_batch, selection_query):
+    # mass retieval
+    get_selection_query_for_batch(selection_query).filter("species_id != predicted_species_id").show()
+    return
+
+
+@app.cell
+def _(get_selection_query_for_batch, selection_query):
+    # batch style
+    for i in range(4):
+        (
+            get_selection_query_for_batch(
+                selection_query
+                .order("observation_id")
+                .limit(100, offset=100*i)
+                .select("*")
+            )
+            .filter("species_id != predicted_species_id")
+        ).show()
+    return
+
+
+@app.cell
+def _(duckdb_conn, selection_query):
+    def generate_dummy_data(duckdb_conn, selection_query):
+        duckdb_conn.sql("drop table if exists dummy_generated_data")
+        selection_query.filter("1 = 0").select(
+            "bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g, island_id, observation_id, species_id, species"
+        ).to_table("dummy_generated_data")
+
+        for idx, rec in enumerate(
+            selection_query.aggregate("""
+                island_id,
+                species_id,
+                min(bill_length_mm)::int as min_bill_length_mm,
+                max(bill_length_mm)::int as max_bill_length_mm,
+                min(bill_depth_mm):: int as min_bill_length_mm,
+                max(bill_depth_mm):: int as max_bill_length_mm,
+                min(flipper_length_mm) as min_flipper_length_mm,
+                max(flipper_length_mm) as max_flipper_length_mm,
+                min(body_mass_g) as min_body_mass_g,
+                max(body_mass_g) as mac_body_mass_g
+            """).fetchall()
+        ):
+            bill_length_range = duckdb_conn.sql(f"from range({rec[2]}, {rec[3]})").select(
+                "range as bill_length"
+            )
+
+            bill_depth_range = duckdb_conn.sql(f"from range({rec[4]}, {rec[5]})").select(
+                "range as bill_depth"
+            )
+
+            flipper_length_range = duckdb_conn.sql(
+                f"from range({rec[6]}, {rec[7]})"
+            ).select("range as flipper_length")
+
+            body_mass_range = duckdb_conn.sql(
+                f"from range({rec[6]}, {rec[7]})"
+            ).select("range as flipper_length")
+
+            body_mass_range = duckdb_conn.sql(f"from range({rec[8]}, {rec[9]})").select(
+                "range as body_mass"
+            )
+
+            dummy_range = duckdb_conn.sql("from range(1,10)").set_alias(
+                "dummy_range"
+            )
+
+            sql_query = (
+                dummy_range.join(bill_length_range, condition="1 = 1")
+                .join(bill_depth_range, condition="1 = 1")
+                .join(flipper_length_range, condition="1 = 1")
+                .join(body_mass_range, condition="1 = 1")
+                .join(duckdb_conn.table("species_ref"), condition=f"species_id = {rec[1]}")
+                .select(
+                    f"""
+                    bill_length + 10 ** 1/range as bill_length_mm,
+                    bill_depth + 10 ** 1/range as bill_depth_mm,
+                    flipper_length + (10 ** 1/range)::int as flipper_length_mm,
+                    body_mass + (10 ** 1/range)::int as body_mass_g,
+                    {rec[0]} as island_id,
+                    null as observation_id,
+                    species_id,
+                    species
+                    """
+                )
+            ).sql_query()
+
+            duckdb_conn.sql(f"select * from ({sql_query}) using sample 30%").insert_into("dummy_generated_data")
+
+    generate_dummy_data(duckdb_conn, selection_query)
+
+    duckdb_conn.table("dummy_generated_data").count("*")
     return
 
 
